@@ -1,126 +1,84 @@
-from flask import *
+import streamlit as st
 import pickle
 import pandas as pd
-import csv
-app = Flask(__name__)
+import random
+
+# Load ML model
 with open('food_model.pickle', 'rb') as file:
     model = pickle.load(file)
+
+# Load dataset
 food_data = pd.read_csv('done_food_data.csv')
-def read_csv(file_path, sort_by='Descrip'):
-    with open(file_path, 'r') as f:
-        reader = csv.DictReader(f)
-        rows = [row for row in reader]
-        sorted_rows = sorted(rows, key=lambda x: x[sort_by])
-        return sorted_rows
 
-@app.route("/")
-def index():
-    return render_template("mainpage.html")
+# Exclude keywords for vegetarian filtering
+exclude_keywords = ['Egg', 'Fish', 'meat', 'beef', 'Chicken', 'Beef', 'Deer', 'lamb', 'crab', 'pork',
+                    'Turkey', 'flesh', 'Ostrich', 'Emu', 'cuttelfish', 'Seaweed', 'crayfish', 'shrimp', 'Octopus']
 
-@app.route("/predict", methods=['POST'])
-def predict():
-    # get the user input from the form
-    input_1 = float(request.form['input_1'])
-    input_2 = float(request.form['input_2'])
-    input_3 = float(request.form['input_3'])
+# App title
+st.title("Food Recommendation and Prediction App")
+
+# Navigation
+page = st.sidebar.selectbox("Go to", ["Home", "Search Foods", "Muscle Gain", "Weight Gain", "Weight Loss"])
+
+# --- Prediction Page ---
+if page == "Home":
+    st.subheader("Enter your nutritional inputs:")
+    input_1 = st.number_input("Input 1")
+    input_2 = st.number_input("Input 2")
+    input_3 = st.number_input("Input 3")
+
+    if st.button("Predict"):
+        try:
+            inputs = [[input_1, input_2, input_3]]
+            prediction = model.predict(inputs)
+
+            category_map = {
+                'Muscle_Gain': 'Muscle Gain',
+                'Weight_Gain': 'Weight Gain',
+                'Weight_Loss': 'Weight Loss'
+            }
+
+            result = category_map.get(prediction[0], 'General food')
+            st.success(f"Recommended Category: {result}")
+        except Exception as e:
+            st.error(f"Error in prediction: {e}")
+
+# --- Common filter UI ---
+def food_filters(data):
+    veg = st.checkbox("Vegetarian only")
+    iron = st.checkbox("High in Iron (>6 mg)")
+    calcium = st.checkbox("High in Calcium (>150 mg)")
+
+    if iron:
+        data = data[data['Iron_mg'] > 6]
+    if calcium:
+        data = data[data['Calcium_mg'] > 150]
+    if veg:
+        data = data[~data['Descrip'].str.contains('|'.join(exclude_keywords), case=False)]
     
-    # create an input array for the model
-    inputs = [[input_1, input_2, input_3]]
-    
-    # make a prediction using the loaded model
-    prediction = model.predict(inputs)
-    
-    # format the prediction as a string
-    if prediction[0] == 'Muscle_Gain':
-        result = 'Muscle Gain'
-    if prediction[0] == 'Weight_Gain':
-        result = 'Weight Gain'
-    if prediction[0] == 'Weight_Loss':
-        result = 'Weight Loss'
-    else:
-        result = 'General food'
-    
-    # render the prediction result on a new page
-    return render_template("mainpage.html", result=result)
+    return data
 
-@app.route("/musclegain", methods=['POST'])
-def musclegain():
-    vegetarian = request.form.getlist('vegetarian')
-    iron = request.form.getlist('iron')
-    calcium = request.form.getlist('calcium')
-    anyfoods = request.form.getlist('anyfoods')
-    if 'iron' in iron:
-        muscle_gain_datas = food_data[(food_data['category'] == 'Muscle_Gain') & (food_data['Iron_mg'] > 6)]
-    if 'calcium' in calcium:
-        muscle_gain_data = food_data[(food_data['category'] == 'Muscle_Gain') & (food_data['Calcium_mg'] > 150)]
-    if 'vegetarian' in vegetarian:
-        exclude_keywords = ['Egg','Fish', 'meat', 'beef','Chicken','Beef','Deer','lamb','crab','pork','Frog legs','Pork','Turkey','flesh','Ostrich','Emu','cuttelfish','Seaweed','crayfish','shrimp','Octopus']
-        muscle_gain_data = food_data[(food_data['category'] == 'Muscle_Gain') & (~food_data['Descrip'].str.contains('|'.join(exclude_keywords)))]
-    if 'anyfoods' in anyfoods:    
-        muscle_gain_data = food_data[food_data['category'] == 'Muscle_Gain']
+# --- Recommendation Pages ---
+if page in ["Muscle Gain", "Weight Gain", "Weight Loss"]:
+    category_key = page.replace(" ", "_")
+    st.subheader(f"{page} Food Recommendations")
 
-# Print 5 random rows from the filtered data
-    musclegainfoods = muscle_gain_data['Descrip'].sample(n=5).to_string(index=False)
-    
-    
-    # Your code to filter and retrieve the data goes here 
+    filtered_data = food_data[food_data['category'] == category_key]
+    filtered_data = food_filters(filtered_data)
 
-    # Render the filtered data on the same page
-    return render_template("mainpage.html", musclegainfoods=musclegainfoods)
+    if st.button("Get Recommendations"):
+        sample = filtered_data['Descrip'].sample(n=min(5, len(filtered_data))).tolist()
+        if sample:
+            st.write("### Recommended Foods:")
+            for food in sample:
+                st.write(f"- {food}")
+        else:
+            st.warning("No foods found with the selected filters.")
 
-@app.route("/weightgain", methods=['POST'])
-def weightgain():
-    vegetarian = request.form.getlist('vegetarian')
-    iron = request.form.getlist('iron')
-    calcium = request.form.getlist('calcium')
-    anyfoods = request.form.getlist('anyfoods')
-    if 'iron' in iron:
-        weight_gain_data = food_data[(food_data['category'] == 'Weight_Gain') & (food_data['Iron_mg'] > 6)]
-    if 'calcium' in calcium:
-        weight_gain_data = food_data[(food_data['category'] == 'Weight_Gain') & (food_data['Calcium_mg'] > 150)]
-        print(weight_gain_data)
-    if 'vegetarian' in vegetarian:
-        exclude_keywords = ['Egg','Fish', 'meat', 'beef','Chicken','Beef','Deer','lamb','crab','pork','turkey','flesh']
-        weight_gain_data = food_data[(food_data['category'] == 'Weight_Gain') & (~food_data['Descrip'].str.contains('|'.join(exclude_keywords)))]
-    if 'anyfoods' in anyfoods:    
-        weight_gain_data = food_data[food_data['category'] == 'Weight_Gain']
+# --- Search Page ---
+if page == "Search Foods":
+    sort_by = st.selectbox("Sort by", options=food_data.columns.tolist(), index=food_data.columns.get_loc("Descrip"))
+    sorted_data = food_data.sort_values(by=sort_by)
 
-# Print 5 random rows from the filtered data
-    weightgainfoods = weight_gain_data['Descrip'].sample(n=5).to_string(index=False)
-    # Your code to filter and retrieve the data goes here 
-
-    # Render the filtered data on the same page
-    return render_template("mainpage.html", weightgainfoods=weightgainfoods)
-
-@app.route("/weightloss", methods=['POST'])
-def weightloss():
-    vegetarian = request.form.getlist('vegetarian')
-    iron = request.form.getlist('iron')
-    calcium = request.form.getlist('calcium')
-    anyfoods = request.form.getlist('anyfoods')
-    if 'iron' in iron:
-        weight_loss_data = food_data[(food_data['category'] == 'Weight_Loss') & (food_data['Iron_mg'] > 6)]
-    if 'calcium' in calcium:
-        weight_loss_data = food_data[(food_data['category'] == 'Weight_Loss') & (food_data['Calcium_mg'] > 150)]
-    if 'vegetarian' in vegetarian:
-        exclude_keywords = ['Egg','Fish', 'meat', 'beef','Chicken','Beef','Deer','lamb','crab','pork','turkey','flesh']
-        weight_loss_data = food_data[(food_data['category'] == 'Weight_Loss') & (~food_data['Descrip'].str.contains('|'.join(exclude_keywords)))]
-    if 'anyfoods' in anyfoods:    
-        weight_loss_data = food_data[food_data['category'] == 'Weight_Loss']
-
-# Print 5 random rows from the filtered data
-    weightlossfoods = weight_loss_data['Descrip'].sample(n=5).to_string(index=False)
-    # Your code to filter and retrieve the data goes here 
-
-    # Render the filtered data on the same page
-    return render_template("mainpage.html", weightlossfoods=weightlossfoods)
-
-@app.route("/search", methods=['POST'])
-def search(sort_by='Descrip'):
-    vegetarian = request.form.getlist('vegetarian')
-    iron = request.form.getlist('iron')
-    calcium = request.form.getlist('calcium')
-    rows = read_csv('done_food_data.csv', sort_by)
-    return render_template('search.html', rows=rows)
-if __name__ == "__main__":
-    app.run()
+    st.write("### All Foods")
+    st.dataframe(sorted_data)
